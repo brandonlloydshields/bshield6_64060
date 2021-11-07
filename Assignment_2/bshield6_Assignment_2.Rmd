@@ -1,0 +1,585 @@
+---
+title: "bshild6_Assignment_2"
+author: "Brandon Lloyd Shields"
+date: "10/24/2021"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = F)
+
+
+```
+
+```{r Loading Packages, include=FALSE}
+library(keras)
+library(dplyr)
+
+```
+
+
+
+```{r Training is 1000 }
+
+#Creating Directories for training, Validation and Testing.
+
+original_dataset_dir <- "~/Downloads/dogs-vs-cats/train"
+
+base_dir_1000 <- "~/Downloads/cats_and_dogs_1000"
+dir.create(base_dir_1000)
+
+train_dir_1000 <- file.path(base_dir_1000, "train")
+dir.create(train_dir_1000)
+validation_dir <- file.path(base_dir_1000, "validation")
+dir.create(validation_dir)
+test_dir <- file.path(base_dir_1000, "test")
+dir.create(test_dir)
+
+train_cats_dir_1000 <- file.path(train_dir_1000, "cats")
+dir.create(train_cats_dir_1000)
+
+train_dogs_dir_1000 <- file.path(train_dir_1000, "dogs")
+dir.create(train_dogs_dir_1000)
+
+validation_cats_dir <- file.path(validation_dir, "cats")
+dir.create(validation_cats_dir)
+
+validation_dogs_dir <- file.path(validation_dir, "dogs")
+dir.create(validation_dogs_dir)
+
+test_cats_dir <- file.path(test_dir, "cats")
+dir.create(test_cats_dir)
+
+test_dogs_dir <- file.path(test_dir, "dogs")
+dir.create(test_dogs_dir)
+
+#For 1000 training sample
+fnames <- paste0("cat.", 1:500, ".jpg")
+file.copy(file.path(original_dataset_dir, fnames), 
+          file.path(train_cats_dir_1000)) 
+
+#For 500 Validation Set
+fnames <- paste0("cat.", 501:750, ".jpg")
+file.copy(file.path(original_dataset_dir, fnames), 
+          file.path(validation_cats_dir))
+
+#For 500 Test set
+fnames <- paste0("cat.", 751:1000, ".jpg")
+file.copy(file.path(original_dataset_dir, fnames),
+          file.path(test_cats_dir))
+
+#For 1000 training set
+fnames <- paste0("dog.", 1:500, ".jpg")
+file.copy(file.path(original_dataset_dir, fnames),
+          file.path(train_dogs_dir_1000))
+
+#For 500 validation set
+fnames <- paste0("dog.", 501:750, ".jpg")
+file.copy(file.path(original_dataset_dir, fnames),
+          file.path(validation_dogs_dir)) 
+
+#For 500 Test set
+fnames <- paste0("dog.", 751:1000, ".jpg")
+file.copy(file.path(original_dataset_dir, fnames),
+          file.path(test_dogs_dir))
+```
+
+```{r Build Initial Model for Binary Classification}
+
+#Building Initial Model for Classification using 1000 training samples - 500 cat and 500 Dog
+model_1000 <- keras_model_sequential() %>% 
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_flatten() %>% 
+  layer_dense(units = 512, activation = "relu") %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+```
+
+```{r Model Summary}
+summary(model_1000)
+
+```
+
+```{r Model Compialation}
+
+model_1000 %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(learning_rate = 1e-4),
+  metrics = c("acc")
+)
+```
+
+```{r Data Preproccessing}
+
+train_datagen <- image_data_generator(rescale = 1/255)
+validation_datagen <- image_data_generator(rescale = 1/255)
+
+train_generator_1000 <- flow_images_from_directory(
+  # This is the target directory
+  train_dir_1000,
+  # This is the data generator
+  train_datagen,
+  # All images will be resized to 150x150
+  target_size = c(150, 150),
+  batch_size = 20,
+  # Since we use binary_crossentropy loss, we need binary labels
+  class_mode = "binary"
+)
+
+validation_generator <- flow_images_from_directory(
+  validation_dir,
+  validation_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary"
+)
+```
+
+```{r Determine Fit}
+history_1000 <- model_1000 %>% fit_generator(
+  train_generator_1000,
+  steps_per_epoch = 50,
+  epochs = 25,
+  validation_data = validation_generator,
+  validation_steps = 25
+)
+
+```
+
+```{r}
+model_1000 %>% save_model_hdf5("cats_and_dogs_small_1.1000")
+
+plot(history_1000)
+
+```
+
+```{r Data Augmentation}
+#There was significant evidence of overfitting due to a small sample size. I will now employ data augmentation and regularization.
+
+```
+
+```{r Introducing Dropout to Model}
+
+#Introducing a dropout layer
+
+model_1000_reg <- keras_model_sequential() %>% 
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_flatten() %>% 
+  layer_dropout(rate = 0.5) %>% 
+  layer_dense(units = 512, activation = "relu") %>% 
+  layer_dense(units = 1, activation = "sigmoid")  
+  
+model_1000_reg %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-4),
+  metrics = c("acc")
+)
+```
+
+```{r Training with Dropout and Data Augmentation}
+# Setting Up data augmentation to reduce overfitting
+
+datagen <- image_data_generator(
+  rescale = 1/255,
+  rotation_range = 40,
+  width_shift_range = 0.2,
+  height_shift_range = 0.2,
+  shear_range = 0.2,
+  zoom_range = 0.2,
+  horizontal_flip = TRUE
+)
+
+test_datagen <- image_data_generator(rescale = 1/255)
+
+train_generator_1000 <- flow_images_from_directory(
+  train_dir_1000,
+  datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary"
+)
+
+validation_generator <- flow_images_from_directory(
+  validation_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary"
+)
+
+history_1000_reg <- model_1000_reg %>% fit_generator(
+  train_generator_1000,
+  steps_per_epoch = 50,
+  epochs = 50,
+  validation_data = validation_generator,
+  validation_steps = 25
+)
+
+plot(history_1000_reg)
+```
+
+```{r}
+plot(history_1000_reg)
+```
+
+```{r Set-up 2000 Training Samples}
+
+#Setting up 2000 training sample directory
+
+base_dir_2000 <- "~/Downloads/cats_and_dogs_2000"
+dir.create(base_dir_2000)
+
+train_dir_2000 <- file.path(base_dir_2000, "train")
+dir.create(train_dir_2000)
+
+
+train_cats_dir_2000 <- file.path(train_dir_2000, "cats")
+dir.create(train_cats_dir_2000)
+
+train_dogs_dir_2000 <- file.path(train_dir_2000, "dogs")
+dir.create(train_dogs_dir_2000)
+
+
+fnames <- paste0("cat.", c(1:500,1001:1500), ".jpg")
+file.copy(file.path(original_dataset_dir, fnames), 
+          file.path(train_cats_dir_2000)) 
+
+fnames <- paste0("dog.", c(1:500,1001:1500), ".jpg")
+file.copy(file.path(original_dataset_dir, fnames),
+          file.path(train_dogs_dir_2000))
+
+```
+
+```{r Model with Regularization}
+
+model_2000_reg <- keras_model_sequential() %>% 
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_flatten() %>% 
+  layer_dropout(rate = 0.5) %>% 
+  layer_dense(units = 512, activation = "relu") %>% 
+  layer_dense(units = 1, activation = "sigmoid")  
+  
+model_2000_reg %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-4),
+  metrics = c("acc")
+)
+
+
+train_generator_2000 <- flow_images_from_directory(
+  train_dir_2000,
+  datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary")
+
+
+
+history_2000_reg <- model_2000_reg %>% fit_generator(
+  train_generator_2000,
+  steps_per_epoch = 50,
+  epochs = 50,
+  validation_data = validation_generator,
+  validation_steps = 25
+)
+
+plot(history_2000_reg)
+```
+
+
+```{r Training Directory 4000}
+
+#Setup training directory for 4000 training samples
+
+base_dir_4000 <- "~/Downloads/cats_and_dogs_4000"
+dir.create(base_dir_4000)
+
+train_dir_4000 <- file.path(base_dir_4000, "train")
+dir.create(train_dir_4000)
+
+
+train_cats_dir_4000 <- file.path(train_dir_4000, "cats")
+dir.create(train_cats_dir_4000)
+
+train_dogs_dir_4000 <- file.path(train_dir_4000, "dogs")
+dir.create(train_dogs_dir_4000)
+
+
+fnames <- paste0("cat.", c(1:500,1001:2500), ".jpg")
+file.copy(file.path(original_dataset_dir, fnames), 
+          file.path(train_cats_dir_4000)) 
+
+fnames <- paste0("dog.", c(1:500,1001:2500), ".jpg")
+file.copy(file.path(original_dataset_dir, fnames),
+          file.path(train_dogs_dir_4000))
+```
+
+```{r}
+model_4000_reg <- keras_model_sequential() %>% 
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_flatten() %>% 
+  layer_dropout(rate = 0.5) %>% 
+  layer_dense(units = 512, activation = "relu") %>% 
+  layer_dense(units = 1, activation = "sigmoid")  
+  
+model_4000_reg %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-4),
+  metrics = c("acc")
+)
+
+
+train_generator_4000 <- flow_images_from_directory(
+  train_dir_4000,
+  datagen,
+  target_size = c(150, 150),
+  batch_size = 40,
+  class_mode = "binary")
+
+
+
+history_4000_reg <- model_4000_reg %>% fit_generator(
+  train_generator_4000,
+  steps_per_epoch = 100,
+  epochs = 50,
+  validation_data = validation_generator,
+  validation_steps = 25
+)
+
+plot(history_4000_reg)
+```
+
+```{r}
+plot(history_4000_reg)
+```
+
+
+```{r Using a Pre-Trained Network }
+
+#Set-up Pretrained Netowork
+library(keras)
+
+conv_base <- application_vgg16(
+  weights = "imagenet",
+  include_top = FALSE,
+  input_shape = c(150, 150, 3)
+)
+
+```
+
+```{r Create Model with Pre-Trined Base}
+
+#Creating the base for pretrained convolution base
+model.pt.1000 <- keras_model_sequential() %>% 
+  conv_base %>% 
+  layer_flatten() %>% 
+  layer_dense(units = 256, activation = "relu") %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+```
+
+```{r freezing the weights}
+freeze_weights(conv_base)
+```
+
+```{r Model with 1000}
+model.pt.1000 %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-5),
+  metrics = c("acc")
+)
+
+history.pt.1000 <- model.pt.1000 %>% fit_generator(
+  train_generator_1000,
+  steps_per_epoch = 50,
+  epochs = 25,
+  validation_data = validation_generator,
+  validation_steps = 25
+)
+
+plot(history.pt.1000)
+
+
+```
+
+```{r Fine Tuning}
+unfreeze_weights(conv_base, from = "block3_conv1")
+```
+
+
+```{r}
+model.pt.1000 %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-5),
+  metrics = c("acc")
+)
+
+history.pt.1000 <- model.pt.1000 %>% fit_generator(
+  train_generator_1000,
+  steps_per_epoch = 50,
+  epochs = 25,
+  validation_data = validation_generator,
+  validation_steps = 25
+)
+
+```
+
+```{r PRE TRAINED 2000}
+model.pt.2000 <- keras_model_sequential() %>% 
+  conv_base %>% 
+  layer_flatten() %>% 
+  layer_dense(units = 256, activation = "relu") %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+
+freeze_weights(conv_base)
+
+unfreeze_weights(conv_base, from = "block3_conv1")
+
+model.pt.2000 %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-5),
+  metrics = c("acc")
+)
+
+history.pt.2000 <- model.pt.2000 %>% fit(
+  train_generator_2000,
+  steps_per_epoch = 50,
+  epochs = 25,
+  validation_data = validation_generator,
+  validation_steps = 25
+)
+
+```
+
+```{r}
+model.pt.4000 <- keras_model_sequential() %>% 
+  conv_base %>% 
+  layer_flatten() %>% 
+  layer_dense(units = 256, activation = "relu") %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+
+freeze_weights(conv_base)
+
+unfreeze_weights(conv_base, from = "block3_conv1")
+
+model.pt.4000 %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-5),
+  metrics = c("acc")
+)
+
+history.pt.4000 <- model.pt.4000 %>% fit(
+  train_generator_4000,
+  steps_per_epoch = 50,
+  epochs = 25,
+  validation_data = validation_generator,
+  validation_steps = 25
+)
+```
+
+```{r Campring Results}
+test_generator <- flow_images_from_directory(
+  test_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 10,
+  class_mode = "binary"
+)
+
+model.pt.4000 %>% evaluate_generator(test_generator, steps = 50)
+
+
+
+```
+
+
+#Model Prediction
+
+```{r}
+model_1000_reg%>% evaluate_generator(test_generator, steps = 50)
+```
+
+```{r}
+model_2000_reg%>% evaluate_generator(test_generator, steps = 50)
+```
+
+```{r}
+model_4000_reg %>% evaluate_generator(test_generator, steps = 50)
+```
+
+```{r}
+model.pt.1000 %>% evaluate_generator(test_generator, steps = 50)
+```
+
+```{r}
+model.pt.2000 %>% evaluate_generator(test_generator, steps = 50)
+```
+
+```{r}
+model.pt.4000 %>% evaluate_generator(test_generator, steps = 50)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
