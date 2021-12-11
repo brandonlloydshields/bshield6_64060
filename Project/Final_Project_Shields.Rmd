@@ -1,0 +1,739 @@
+---
+title: "Final_Project_Shields"
+author: "Brandon Lloyd Shields"
+date: "12/6/2021"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r Load Packages}
+#load packages needed for analysis
+
+library(dplyr)
+library(tidyr)
+library(caret)
+library(keras)
+library(ggplot2)
+library(pROC)
+library(Hmisc)
+library(corrplot)
+```
+
+```{r Getting Data for Analysis}
+#Motivation
+
+#As I am begining to think about possible career transistion after completing my MSBA degree, I thought about opular industries in Northeast Ohio. The first thing that came to mind was the medical industry with world class hospitals in both Cleveland and Akron. Online job boards further indicate a variety of analyst posistions in this industry across the region. It was for this reason that I was motivated to work with medical data.
+
+#Data Source
+
+# I will be working with a data set from Kaggle (https://www.kaggle.com/andrewmvd/heart-failure-clinical-data/code). 
+
+#Dataset from Davide Chicco, Giuseppe Jurman: â€œMachine learning can predict survival of patients with heart failure from serum creatinine and ejection fraction alone. BMC Medical Informatics and Decision Making 20, 16 (2020)
+
+#Cardiovascular disease (CVD) is the number one reason for death globally. There are a variety of behavioral and risk factors that can be used to predict mortality of heart of failure. Having an algorithm that can predict mortality could serve as early detection for high risk patients. The dataset consists of 12 explanatory variables and the target variable (death event)
+
+cvd <- read.csv(file = "~/Downloads/heart_failure_clinical_records_dataset.csv")
+
+```
+
+```{r Results Summary}
+# The goal of this project was to to be able to predict death events from cardiovascular disease based on behavioral and risk factors. This is a binary classification problem and I used neural networks for prediction. 
+
+#During the exploratory data analysis, it was determined that this is an unbalanced data set with far for non-fatal instances. It also revelaed that some variables are more correlated with death events than others. 
+
+#The data set has only 299 observations, which means that hold-out validation would limit the amount of data used for training. For this reason, I opted for K-fold cross validation. Because this is a smaller data set with only 12 features, I was very conscientious about overfitting. This was addressed by limiting the number of units and layers.
+
+#After hyperparaemter tuning I settled on a model that that had two dense layers of 32 and 8 units. In, between I used a dropout layer with a rate of .5 to help limit overfitting. Finally, I used an early call backs based on validation accuracy and validation loss to limit overfitting. The final model was achieved validation accuracies of around 85% when. On unseen data, it had an accuracy of 78%. 
+
+#However, accuracy is not the most important evaluation metric; we are more concerned with making sure that those at risk of a death event are identified. This means we should be focused on recall. When 50% is used as a threhold, accuracy is 75% but recall is only 55%. The threshold to identify a death event can be lowered signficantly without erroding accuracy. For example, a recall of 72% and accuracy of 61% can be achieved by reducing the threshold to 5%. 
+
+#One main way this model could be improved would be thruogh stratified cross validation. Since the data set is unbalanced, this would help ensure that training on death events occurs more frequenlty. It is also possible that on a dataset this small, other machine learning techniques could achieve similar results that are less computationally expesnive. 
+
+
+
+```
+
+
+```{r Review Data Structure, include=FALSE}
+str(cvd)
+
+# The strucrture of data reveals that the target variable (Death Event) is binary, where one eqauls death. The 12 predictor variables are all either numeric or integer, with half of the variables being binary variables
+```
+
+```{r Data Summary}
+
+summary(cvd)
+
+#The summary below shows that there are no missing valuables for any of the 13 variables. Some general information that can be gleaned from the summary statitsics include ages ranging from 40 to 95, the average time for follow-up was 130 days.
+
+#age = age
+#anameia  = Decrease of red blood cells or hemoglobin (boolean)
+#creatiine_phosphokinase = Level of the CPK enzyme in the blood (mcg/L)
+#diabetes = f the patient has diabetes (boolean)
+#ejection_fraction = Percentage of blood leaving the heart at each contraction (percentage)
+#high_blood_pressure = If the patient has hypertension (boolean)
+#platelets = Platelets in the blood (kiloplatelets/mL)
+#serum_creatinine = Level of serum creatinine in the blood (mg/dL)
+#serum_sodium = Level of serum sodium in the blood (mEq/L)
+#sex  = Woman or man (binary)
+#smoking = If the patient smokes or not (boolean)
+#time = follow-up period (days)
+#death_event = If the patient deceased during the follow-up period (boolean)
+
+
+```
+
+```{r Visual Data Exploration}
+#Histogram of Values
+
+h_grams <- cvd %>% gather() %>%
+  ggplot(aes(value)) + 
+  facet_wrap(~key, scales = "free") +
+  geom_histogram()
+
+h_grams
+
+#Histograms below paint a clearer picture of the data. We can see there are some outliers in creatine_phosphokinase and serum creatinine. While some numeric variables follow a gausician distribution, time is the most clear example of one that does not. 
+                          
+```
+
+```{r Correlation}
+#Look to see if there is any correlation betwen variables, paying significant attention to correlation between the target and predictor variables. 
+
+corr_cvd <- rcorr(as.matrix(cvd))
+
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+
+flattenCorrMatrix(corr_cvd$r, corr_cvd$P)
+
+#The results of the corrleation table shows that correlation is significant at the .005 level between Death_Event and age, ejection_fraction, serum_creatinine and serum_sodium.
+
+
+```
+
+```{r Box Plot Comparisons}
+
+#Building Box Plots
+de_age <- ggplot(data = cvd, aes(x = as.character(DEATH_EVENT), y = age)) + 
+  geom_boxplot()
+
+de_ejection <- ggplot(data = cvd, aes(x = as.character(DEATH_EVENT), y = ejection_fraction)) + 
+  geom_boxplot()
+
+de_serum_cre <- ggplot(data = cvd, aes(x = as.character(DEATH_EVENT), y = serum_creatinine)) + 
+  geom_boxplot()
+
+de_serum_sod <- ggplot(data = cvd, aes(x = as.character(DEATH_EVENT), y = serum_sodium)) + 
+  geom_boxplot()
+
+#Displaying Box Plots
+de_age
+de_ejection
+de_serum_cre
+de_serum_sod
+```
+
+```{r Prepare Data for Modeling, include=FALSE}
+
+#This is a relatively small data set which means that we will likley need to use K-fold cross validation for hyper paramet tuning. For this reason, we will split into train and test. This will also help mitigate the fact that we have an unbalanced data set with more survival cases than death events.
+
+set.seed(123)
+TrainIndex <- createDataPartition(cvd$DEATH_EVENT, p=.8, list = FALSE)
+
+train_data <- cvd[TrainIndex,]
+test_data <- cvd[-TrainIndex,]
+
+#seperate predictors from target variables
+train_X <- select(train_data, -DEATH_EVENT)
+test_X <- select(test_data, -DEATH_EVENT)
+
+#Create Vector of labels and convert to numeric for nerual netowrk
+train_y <- (select(train_data, DEATH_EVENT))
+test_y <- (select(test_data, DEATH_EVENT))
+
+#Format vector into matrix so that it can be used in Tensor Flow
+as.matrix(as.numeric(train_y$DEATH_EVENT))
+as.matrix(as.numeric(test_y$DEATH_EVENT))
+
+
+#scale train variable and apply to test variables
+preProcValues <- preProcess(train_X, method = c("center", "scale"))
+
+train_X.norm <- predict(preProcValues, train_X)
+test_X.norm<- predict(preProcValues, test_X)
+
+```
+
+
+```{r Building Model 1}
+set.seed(234)
+#Model Creation - One Layer - 64 Units
+model_1 <- keras_model_sequential() %>%
+  layer_dense(units = 64, activation = 'relu', input_shape = c(12)) %>% #input shape = features
+  layer_dense( units = 1, activation = 'sigmoid')
+
+
+#I will use relu for the activation function
+#I will use sigmoid activation since this is binary classification problem. 
+model_1 %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+#Setting up empty vectors to hold results from folds
+all_acc_histories <- NULL
+all_loss_histories <- NULL
+
+#Specifications for k-fold validation
+k <- 4
+indices <- sample(1:nrow(train_X.norm))
+folds <- cut(indices, breaks = k, labels = FALSE)
+
+#Model Function
+
+for (i in 1:k) {
+  cat("processing fold #", i, "\n")
+  val_indices <- which(folds == i, arr.ind = TRUE)
+  val_data <- as.matrix(train_X.norm[val_indices,])
+  val_targets <- as.matrix(train_y[val_indices,])
+  partial_train_data <- as.matrix(train_X.norm[-val_indices,])
+  partial_train_targets <- as.matrix(train_y[-val_indices,])
+
+  history <- model_1 %>% fit(
+    partial_train_data, partial_train_targets,
+    validation_data = list(val_data, val_targets),
+    epochs = 100, batch_size = 1, verbose = 0)
+    
+    acc_history <- history$metrics$val_accuracy
+  all_acc_histories <- rbind(all_acc_histories, acc_history)
+  
+  loss_history <-history$metrics$val_loss
+  all_loss_histories <- rbind(all_loss_histories, loss_history)
+
+}
+
+#Compiling Validationa Accuracy and Loss from folds
+average_acc_history <- data.frame(
+  epoch = seq(1:ncol(all_acc_histories)),
+  validation_acc = apply(all_acc_histories, 2, mean)
+)
+
+
+average_loss_history <- data.frame(
+  epoch = seq(1:ncol(all_loss_histories)),
+  validation_loss = apply(all_loss_histories, 2, mean)
+)
+
+#Plotting and Printing results
+ggplot(average_acc_history, aes(x = epoch, y = validation_acc)) + geom_line()
+ggplot(average_loss_history, aes(x = epoch, y = validation_loss)) + geom_line()
+
+# Overfitting starts occuring after the second epoch as evidence by validation loss and validation accuracy. 64 units may be too many. Lets adjust with one layer and fewer units. 
+ 
+```
+
+
+```{r Building Model 2}
+set.seed(456)
+#Model Creation - One layer - 8 Units
+model_2 <- keras_model_sequential() %>%
+  layer_dense(units = 8, activation = 'relu', input_shape = c(12)) %>% #input shape = features
+  layer_dense( units = 1, activation = 'sigmoid')
+
+
+#I will use relu for the activation function
+#I will use sigmoid activation since this is binary classification problem. 
+model_2 %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+#Setting up empty vectors to hold results from folds
+all_acc_histories <- NULL
+all_loss_histories <- NULL
+
+#Specifications for k-fold validation
+k <- 4
+indices <- sample(1:nrow(train_X.norm))
+folds <- cut(indices, breaks = k, labels = FALSE)
+
+#Model Function
+
+for (i in 1:k) {
+  cat("processing fold #", i, "\n")
+  val_indices <- which(folds == i, arr.ind = TRUE)
+  val_data <- as.matrix(train_X.norm[val_indices,])
+  val_targets <- as.matrix(train_y[val_indices,])
+  
+  partial_train_data <- as.matrix(train_X.norm[-val_indices,])
+  partial_train_targets <- as.matrix(train_y[-val_indices,])
+  
+  history <- model_2 %>% fit(
+    partial_train_data, partial_train_targets,
+    validation_data = list(val_data, val_targets),
+    epochs = 100, batch_size = 1, verbose = 0)
+    
+    acc_history <- history$metrics$val_accuracy
+  all_acc_histories <- rbind(all_acc_histories, acc_history)
+  
+  loss_history <-history$metrics$val_loss
+  all_loss_histories <- rbind(all_loss_histories, loss_history)
+
+}
+
+#Compiling Validationa Accuracy and Loss from folds
+average_acc_history <- data.frame(
+  epoch = seq(1:ncol(all_acc_histories)),
+  validation_acc = apply(all_acc_histories, 2, mean)
+)
+
+
+average_loss_history <- data.frame(
+  epoch = seq(1:ncol(all_loss_histories)),
+  validation_loss = apply(all_loss_histories, 2, mean)
+)
+
+#Plotting and Printing results
+ggplot(average_acc_history, aes(x = epoch, y = validation_acc)) + geom_line()
+ggplot(average_loss_history, aes(x = epoch, y = validation_loss)) + geom_line()
+
+#Still overfitting - will add a second layer of 8 units and along with one dropout layer to reduce overfitting
+
+```
+
+```{r Building Model 3}
+
+set.seed(789)
+#Model Creation - Two Layer - 8 Units - dropout
+model_3 <- keras_model_sequential() %>%
+  layer_dense(units = 8, activation = 'relu', input_shape = c(12)) %>% #input shape = features
+   layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 8, activation = 'relu') %>%
+  layer_dense( units = 1, activation = 'sigmoid')
+
+
+#I will use relu for the activation function
+#I will use sigmoid activation since this is binary classification problem. 
+model_3 %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+#Setting up empty vectors to hold results from folds
+all_acc_histories <- NULL
+all_loss_histories <- NULL
+
+#Specifications for k-fold validation
+k <- 4
+indices <- sample(1:nrow(train_X.norm))
+folds <- cut(indices, breaks = k, labels = FALSE)
+
+#Model Function
+
+for (i in 1:k) {
+  cat("processing fold #", i, "\n")
+  val_indices <- which(folds == i, arr.ind = TRUE)
+  val_data <- as.matrix(train_X.norm[val_indices,])
+  val_targets <- as.matrix(train_y[val_indices,])
+  partial_train_data <- as.matrix(train_X.norm[-val_indices,])
+  partial_train_targets <- as.matrix(train_y[-val_indices,])
+
+  history <- model_3 %>% fit(
+    partial_train_data, partial_train_targets,
+    validation_data = list(val_data, val_targets),
+    epochs = 100, batch_size = 1, verbose = 0)
+    
+    acc_history <- history$metrics$val_accuracy
+  all_acc_histories <- rbind(all_acc_histories, acc_history)
+  
+  loss_history <-history$metrics$val_loss
+  all_loss_histories <- rbind(all_loss_histories, loss_history)
+
+}
+
+#Compiling Validationa Accuracy and Loss from folds
+average_acc_history <- data.frame(
+  epoch = seq(1:ncol(all_acc_histories)),
+  validation_acc = apply(all_acc_histories, 2, mean)
+)
+
+
+average_loss_history <- data.frame(
+  epoch = seq(1:ncol(all_loss_histories)),
+  validation_loss = apply(all_loss_histories, 2, mean)
+)
+
+#Plotting and Printing results
+ggplot(average_acc_history, aes(x = epoch, y = validation_acc)) + geom_line()
+ggplot(average_loss_history, aes(x = epoch, y = validation_loss)) + geom_line()
+
+```
+
+```{r Building Model 4}
+
+set.seed(889)
+#Model Creation - Two Layer - 8 Units - one dropout = call backs 
+model_4 <- keras_model_sequential() %>%
+  layer_dense(units = 8, activation = 'relu', input_shape = c(12)) %>%#input shape = features
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 8, activation = 'relu') %>%
+  layer_dense( units = 1, activation = 'sigmoid')
+
+callbacks_list <- list(
+  callback_early_stopping(
+    monitor = "val_accuracy",
+    patience = 1
+),
+
+callback_model_checkpoint(
+    filepath = "my_model.h4",
+    monitor = "val_loss",
+    save_best_only = TRUE
+) )
+
+#I will use relu for the activation function
+#I will use sigmoid activation since this is binary classification problem. 
+model_4 %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+#Setting up empty vectors to hold results from folds
+all_acc_histories <- NULL
+all_loss_histories <- NULL
+
+#Specifications for k-fold validation
+k <- 4
+indices <- sample(1:nrow(train_X.norm))
+folds <- cut(indices, breaks = k, labels = FALSE)
+
+#Model Function
+
+for (i in 1:k) {
+  cat("processing fold #", i, "\n")
+  val_indices <- which(folds == i, arr.ind = TRUE)
+  val_data <- as.matrix(train_X.norm[val_indices,])
+  val_targets <- as.matrix(train_y[val_indices,])
+  partial_train_data <- as.matrix(train_X.norm[-val_indices,])
+  partial_train_targets <- as.matrix(train_y[-val_indices,])
+
+  history <- model_4 %>% fit(
+    partial_train_data, partial_train_targets,
+    validation_data = list(val_data, val_targets),
+    epochs = 100, batch_size = 1, callbacks = callbacks_list, verbose = 0)
+    
+    acc_history <- history$metrics$val_accuracy
+  all_acc_histories <- rbind(all_acc_histories, acc_history)
+  
+  loss_history <-history$metrics$val_loss
+  all_loss_histories <- rbind(all_loss_histories, loss_history)
+
+}
+
+#Compiling Validationa Accuracy and Loss from folds
+average_acc_history <- data.frame(
+  epoch = seq(1:ncol(all_acc_histories)),
+  validation_acc = apply(all_acc_histories, 2, mean)
+)
+
+
+average_loss_history <- data.frame(
+  epoch = seq(1:ncol(all_loss_histories)),
+  validation_loss = apply(all_loss_histories, 2, mean)
+)
+
+#Plotting and Printing results
+ggplot(average_acc_history, aes(x = epoch, y = validation_acc)) + geom_line()
+ggplot(average_loss_history, aes(x = epoch, y = validation_loss)) + geom_line()
+```
+
+```{r Building Model 5}
+
+set.seed(647)
+#Model Creation - Two Layer - 16/8 Units - one dropout = call backs 
+model_5 <- keras_model_sequential() %>%
+  layer_dense(units = 16, activation = 'relu', input_shape = c(12)) %>%#input shape = features
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 8, activation = 'relu') %>%
+  layer_dense( units = 1, activation = 'sigmoid')
+
+callbacks_list <- list(
+  callback_early_stopping(
+    monitor = "val_accuracy",
+    patience = 1
+),
+
+callback_model_checkpoint(
+    filepath = "my_model.h4",
+    monitor = "val_loss",
+    save_best_only = TRUE
+) )
+
+#I will use relu for the activation function
+#I will use sigmoid activation since this is binary classification problem. 
+model_5 %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+#Setting up empty vectors to hold results from folds
+all_acc_histories <- NULL
+all_loss_histories <- NULL
+
+#Specifications for k-fold validation
+k <- 4
+indices <- sample(1:nrow(train_X.norm))
+folds <- cut(indices, breaks = k, labels = FALSE)
+
+#Model Function
+
+for (i in 1:k) {
+  cat("processing fold #", i, "\n")
+  val_indices <- which(folds == i, arr.ind = TRUE)
+  val_data <- as.matrix(train_X.norm[val_indices,])
+  val_targets <- as.matrix(train_y[val_indices,])
+  partial_train_data <- as.matrix(train_X.norm[-val_indices,])
+  partial_train_targets <- as.matrix(train_y[-val_indices,])
+
+  history <- model_5 %>% fit(
+    partial_train_data, partial_train_targets,
+    validation_data = list(val_data, val_targets),
+    epochs = 100, batch_size = 1, callbacks = callbacks_list, verbose = 0)
+    
+    acc_history <- history$metrics$val_accuracy
+  all_acc_histories <- rbind(all_acc_histories, acc_history)
+  
+  loss_history <-history$metrics$val_loss
+  all_loss_histories <- rbind(all_loss_histories, loss_history)
+
+}
+
+#Compiling Validationa Accuracy and Loss from folds
+average_acc_history <- data.frame(
+  epoch = seq(1:ncol(all_acc_histories)),
+  validation_acc = apply(all_acc_histories, 2, mean)
+)
+
+
+average_loss_history <- data.frame(
+  epoch = seq(1:ncol(all_loss_histories)),
+  validation_loss = apply(all_loss_histories, 2, mean)
+)
+
+#Plotting and Printing results
+ggplot(average_acc_history, aes(x = epoch, y = validation_acc)) + geom_line()
+ggplot(average_loss_history, aes(x = epoch, y = validation_loss)) + geom_line()
+```
+
+```{r Building Model 6}
+set.seed(887)
+#Model Creation - Two Layer - 16 Units - one dropout = call backs 
+model_6 <- keras_model_sequential() %>%
+  layer_dense(units = 16, activation = 'relu', input_shape = c(12)) %>%#input shape = features
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 16, activation = 'relu') %>%
+  layer_dense( units = 1, activation = 'sigmoid')
+
+callbacks_list <- list(
+  callback_early_stopping(
+    monitor = "val_accuracy",
+    patience = 1
+),
+
+callback_model_checkpoint(
+    filepath = "my_model.h4",
+    monitor = "val_loss",
+    save_best_only = TRUE
+) )
+
+#I will use relu for the activation function
+#I will use sigmoid activation since this is binary classification problem. 
+model_6 %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+#Setting up empty vectors to hold results from folds
+all_acc_histories <- NULL
+all_loss_histories <- NULL
+
+#Specifications for k-fold validation
+k <- 4
+indices <- sample(1:nrow(train_X.norm))
+folds <- cut(indices, breaks = k, labels = FALSE)
+
+#Model Function
+
+for (i in 1:k) {
+  cat("processing fold #", i, "\n")
+  val_indices <- which(folds == i, arr.ind = TRUE)
+  val_data <- as.matrix(train_X.norm[val_indices,])
+  val_targets <- as.matrix(train_y[val_indices,])
+  partial_train_data <- as.matrix(train_X.norm[-val_indices,])
+  partial_train_targets <- as.matrix(train_y[-val_indices,])
+
+  history <- model_6 %>% fit(
+    partial_train_data, partial_train_targets,
+    validation_data = list(val_data, val_targets),
+    epochs = 25, batch_size = 1, callbacks = callbacks_list, verbose = 0)
+    
+    acc_history <- history$metrics$val_accuracy
+  all_acc_histories <- rbind(all_acc_histories, acc_history)
+  
+  loss_history <-history$metrics$val_loss
+  all_loss_histories <- rbind(all_loss_histories, loss_history)
+
+}
+
+#Compiling Validationa Accuracy and Loss from folds
+average_acc_history <- data.frame(
+  epoch = seq(1:ncol(all_acc_histories)),
+  validation_acc = apply(all_acc_histories, 2, mean)
+)
+
+
+average_loss_history <- data.frame(
+  epoch = seq(1:ncol(all_loss_histories)),
+  validation_loss = apply(all_loss_histories, 2, mean)
+)
+
+#Plotting and Printing results
+ggplot(average_acc_history, aes(x = epoch, y = validation_acc)) + geom_line()
+ggplot(average_loss_history, aes(x = epoch, y = validation_loss)) + geom_line()
+```
+
+```{r Building Model 7}
+set.seed(780)
+#Model Creation - Two Layer - 32/8 Units - one dropout = call backs 
+model_7 <- keras_model_sequential() %>%
+  layer_dense(units = 32, activation = 'relu', input_shape = c(12)) %>%#input shape = features
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 8, activation = 'relu') %>%
+  layer_dense( units = 1, activation = 'sigmoid')
+
+callbacks_list <- list(
+  callback_early_stopping(
+    monitor = "val_accuracy",
+    patience = 3
+),
+
+callback_model_checkpoint(
+    filepath = "my_model.h4",
+    monitor = "val_loss",
+    save_best_only = TRUE
+) )
+
+#I will use relu for the activation function
+#I will use sigmoid activation since this is binary classification problem. 
+model_7 %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+#Setting up empty vectors to hold results from folds
+all_acc_histories <- NULL
+all_loss_histories <- NULL
+
+#Specifications for k-fold validation
+k <- 4
+indices <- sample(1:nrow(train_X.norm))
+folds <- cut(indices, breaks = k, labels = FALSE)
+
+#Model Function
+
+for (i in 1:k) {
+  cat("processing fold #", i, "\n")
+  val_indices <- which(folds == i, arr.ind = TRUE)
+  val_data <- as.matrix(train_X.norm[val_indices,])
+  val_targets <- as.matrix(train_y[val_indices,])
+  partial_train_data <- as.matrix(train_X.norm[-val_indices,])
+  partial_train_targets <- as.matrix(train_y[-val_indices,])
+
+  history <- model_7 %>% fit(
+    partial_train_data, partial_train_targets,
+    validation_data = list(val_data, val_targets),
+    epochs = 25, batch_size = 1, callbacks = callbacks_list, verbose = 0)
+    
+    acc_history <- history$metrics$val_accuracy
+  all_acc_histories <- rbind(all_acc_histories, acc_history)
+  
+  loss_history <-history$metrics$val_loss
+  all_loss_histories <- rbind(all_loss_histories, loss_history)
+
+}
+
+#Compiling Validationa Accuracy and Loss from folds
+average_acc_history <- data.frame(
+  epoch = seq(1:ncol(all_acc_histories)),
+  validation_acc = apply(all_acc_histories, 2, mean)
+)
+
+
+average_loss_history <- data.frame(
+  epoch = seq(1:ncol(all_loss_histories)),
+  validation_loss = apply(all_loss_histories, 2, mean)
+)
+
+#Plotting and Printing results
+ggplot(average_acc_history, aes(x = epoch, y = validation_acc)) + geom_line()
+ggplot(average_loss_history, aes(x = epoch, y = validation_loss)) + geom_line()
+```
+
+
+```{r Model Performance}
+#Evaluate Model Performance on Test Data
+results <- model_7 %>% evaluate(as.matrix(test_X.norm), as.matrix(test_y))
+
+
+#Prediction Values 
+predict_prob <- model_7 %>% predict(as.matrix(test_X.norm)) %>% as.data.frame()
+
+# Create Lables based on various thrsholds
+predict_prob_tb <- predict_prob %>% mutate(Death_Event_.2 = ifelse(predict_prob$V1 >= .2,1,0),
+                                        Death_Event_.3 = ifelse(predict_prob$V1 >= .3,1,0),
+                                        Death_Event_.4 = ifelse(predict_prob$V1 >= .4,1,0),
+                                        Death_Event_.05 = ifelse(predict_prob$V1 >= .05,1,0)
+)
+
+
+#preparing Data and Constructing Confusion Matrix
+predict_prob_tb$Death_Event_.2 <- as.factor(predict_prob_tb$Death_Event_.2)
+predict_prob_tb$Death_Event_.3 <- as.factor(predict_prob_tb$Death_Event_.3)
+predict_prob_tb$Death_Event_.4 <- as.factor(predict_prob_tb$Death_Event_.4)
+predict_prob_tb$Death_Event_.05 <- as.factor(predict_prob_tb$Death_Event_.05)
+test_y.factor <- as.factor(test_y$DEATH_EVENT)
+
+confusionMatrix(predict_prob_tb$Death_Event_.05, test_y.factor)
+confusionMatrix(predict_prob_tb$Death_Event_.4, test_y.factor)
+confusionMatrix(predict_prob_tb$Death_Event_.3, test_y.factor)
+confusionMatrix(predict_prob_tb$Death_Event_.2, test_y.factor)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
